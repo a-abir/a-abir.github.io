@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://a-abir.github.io/sitemap.xml
