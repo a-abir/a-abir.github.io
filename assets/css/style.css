@@ -22,12 +22,15 @@
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
 
+  /* Wider range between body and display. The contrast between the two is
+     what reads as "designed" — a timid h1 is the single most dated thing
+     about a text-heavy page. Body stays at a comfortable reading size. */
   --step--1: clamp(.78rem, .76rem + .1vw, .84rem);
   --step-0:  clamp(1rem, .97rem + .16vw, 1.08rem);
-  --step-1:  clamp(1.1rem, 1.13rem + .35vw, 1.4rem);
-  --step-2:  clamp(1.45rem, 1.32rem + .65vw, 1.85rem);
-  --step-3:  clamp(1.8rem, 1.55rem + 1.2vw, 2.6rem);
-  --step-4:  clamp(2.4rem, 1.8rem + 3vw, 4.2rem);
+  --step-1:  clamp(1.1rem, 1.05rem + .35vw, 1.4rem);
+  --step-2:  clamp(1.5rem, 1.32rem + .8vw, 2.1rem);
+  --step-3:  clamp(1.9rem, 1.55rem + 1.5vw, 3rem);
+  --step-4:  clamp(2.9rem, 2.1rem + 4.2vw, 5.6rem);
 
   --s1: .5rem;  --s2: 1rem;   --s3: 1.5rem; --s4: 2rem;
   --s5: 3rem;   --s6: 4.5rem; --s7: 7.5rem;
@@ -73,7 +76,6 @@ html {
   scroll-behavior: smooth;
   overflow-x: clip;
 }
-
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   *, *::before, *::after {
@@ -103,7 +105,7 @@ body {
 h1, h2, h3, h4 {
   font-weight: 600; letter-spacing: -.022em; line-height: 1.15; text-wrap: balance;
 }
-h1 { font-size: var(--step-4); letter-spacing: -.035em; }
+h1 { font-size: var(--step-4); letter-spacing: -.045em; line-height: .95; }
 h2 { font-size: var(--step-3); }
 h3 { font-size: var(--step-1); letter-spacing: -.012em; }
 h4 { font-size: var(--step-0); }
@@ -124,7 +126,6 @@ p, li, dd, h1, h2, h3, h4, figcaption { overflow-wrap: break-word; }
 /* ---------- 4. layout ---------------------------------- */
 .wrap { width: min(100% - 2.5rem, var(--wide)); margin-inline: auto; }
 .prose { max-width: var(--measure); }
-
 section[id] { scroll-margin-top: 96px; padding-block: var(--s7); }
 section[id] + section[id] { border-top: 1px solid var(--border); }
 @media (max-width: 640px) { section[id] { padding-block: var(--s6); } }
@@ -193,6 +194,7 @@ section[id] + section[id] { border-top: 1px solid var(--border); }
 
 /* ---- mobile menu -------------------------------------------------
    A plain disclosure panel. Deliberately NOT a modal:
+
    - no scroll lock on html or body. Toggling `overflow` or
      `position: fixed` on a scrolled document makes mobile browsers
      recalculate the viewport, which reads as the page jumping.
@@ -219,7 +221,6 @@ section[id] + section[id] { border-top: 1px solid var(--border); }
   overscroll-behavior: contain;
 }
 .nav__mobile[hidden] { display: none; }
-
 .nav__mobile ul {
   list-style: none;
   width: min(100% - 2.5rem, var(--wide));
@@ -238,7 +239,6 @@ section[id] + section[id] { border-top: 1px solid var(--border); }
 .nav__mobile a:active { color: var(--accent); }
 .nav__mobile a[aria-current="true"] { color: var(--accent); }
 .nav__mobile a[aria-current="true"]::after { content: "•"; color: var(--accent); }
-
 .nav__mobile-cta {
   width: min(100% - 2.5rem, var(--wide));
   margin: var(--s3) auto 0;
@@ -299,16 +299,19 @@ section[id] + section[id] { border-top: 1px solid var(--border); }
 @keyframes draw { to { stroke-dashoffset: 0; } }
 
 .hero__copy { min-width: 0; }
-
 .hero__inner {
   position: relative; z-index: 2;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) clamp(180px, 22vw, 260px);
+  grid-template-columns: minmax(0, 1fr) clamp(180px, 22vw, 250px);
   gap: clamp(2rem, 5vw, 4.5rem);
   align-items: center;
 }
 
-/* ---- portrait: one element, one glow ---- */
+/* ---- portrait -----------------------------------------------------
+   Rounded rectangle, no glow. The circle-plus-colored-bloom treatment
+   is the most era-specific element a personal site can have, and the
+   circle fought the rectilinear grid that everything else here uses.
+   Depth now comes from a hairline ring and a real shadow. */
 .hero__portrait {
   margin: 0;
   position: relative;
@@ -316,49 +319,42 @@ section[id] + section[id] { border-top: 1px solid var(--border); }
   aspect-ratio: 1;
   justify-self: end;
 }
-.hero__portrait::before {
-  content: "";
-  position: absolute; inset: -12%;
-  border-radius: 50%;
-  background: radial-gradient(circle at 50% 42%,
-              color-mix(in srgb, var(--accent) 26%, transparent), transparent 62%);
-  filter: blur(26px);
-  opacity: .55;
-}
 .hero__portrait img {
-  position: relative;
   width: 100%; height: 100%;
-  border-radius: 50%;
+  border-radius: 18px;
   object-fit: cover;
-  object-position: center 22%;
-  background: color-mix(in srgb, var(--surface) 80%, var(--accent) 6%);
+  object-position: center 18%;
+  background: var(--surface);
   box-shadow:
     0 0 0 1px var(--border-strong),
-    0 0 0 6px color-mix(in srgb, var(--accent) 8%, transparent),
-    0 18px 40px rgb(0 0 0 / .28);
+    0 24px 48px -18px rgb(0 0 0 / .45);
 }
 [data-theme="light"] .hero__portrait img {
   box-shadow:
     0 0 0 1px var(--border-strong),
-    0 0 0 6px color-mix(in srgb, var(--accent) 10%, transparent),
-    0 18px 40px rgb(0 0 0 / .10);
+    0 24px 48px -20px rgb(0 0 0 / .18);
 }
 
 .eyebrow {
   font-family: var(--font-mono); font-size: var(--step--1);
   color: var(--accent); text-transform: lowercase; letter-spacing: .02em; margin-bottom: var(--s2);
 }
-.hero h1 { margin-bottom: .35rem; }
+.hero h1 { margin-bottom: .5rem; }
 .hero__creds { font-family: var(--font-mono); font-size: var(--step--1); color: var(--text-faint); margin-bottom: var(--s3); }
+
+/* Static. The typewriter cycle delayed the actual message by two
+   seconds, reflowed on every keystroke, and is a 2015 tell. One line,
+   stated once, at display weight. */
 .hero__headline {
-  font-size: var(--step-1); font-weight: 600; letter-spacing: -.02em;
-  line-height: 1.25; max-width: 28ch; margin-bottom: var(--s3); min-height: 2.5em;
+  font-size: var(--step-2); font-weight: 600; letter-spacing: -.025em;
+  line-height: 1.15; max-width: 20ch; margin-bottom: var(--s3);
+  color: var(--text);
+  text-wrap: balance;
 }
-.hero__headline .cursor {
-  display: inline-block; width: .55ch; background: var(--accent);
-  color: transparent; animation: blink .9s steps(1) infinite; transform: translateY(.1em);
-}
-.hero__pitch { max-width: 58ch; color: var(--text-dim); font-size: var(--step-0); line-height: 1.5; margin-bottom: var(--s4); }
+/* JS removes this node; the rule is the no-JS fallback. */
+.hero__headline .cursor { display: none; }
+
+.hero__pitch { max-width: 54ch; color: var(--text-dim); font-size: var(--step-0); line-height: 1.6; margin-bottom: var(--s4); }
 .hero__pitch strong { color: var(--text); font-weight: 500; }
 .hero__meta {
   display: flex; flex-wrap: wrap; gap: .5rem 1.5rem;
@@ -378,9 +374,10 @@ section[id] + section[id] { border-top: 1px solid var(--border); }
   .hero__inner { grid-template-columns: 1fr; gap: var(--s4); }
   .hero__portrait {
     order: -1;
-    width: clamp(120px, 34vw, 170px);
+    width: clamp(110px, 30vw, 150px);
     justify-self: start;
   }
+  .hero__portrait img { border-radius: 14px; }
 }
 @media (max-width: 640px) {
   .hero { padding-block: 2.5rem var(--s6); }
@@ -398,9 +395,8 @@ section[id] + section[id] { border-top: 1px solid var(--border); }
 }
 .sec-label::before { content: "//"; color: var(--accent); }
 .sec-label::after { content: ""; flex: 1; height: 1px; background: var(--border); }
-
 .sec-head { margin-bottom: var(--s4); }
-.sec-head h3 { font-size: var(--step-3); letter-spacing: -.022em; }
+.sec-head h3 { font-size: var(--step-3); letter-spacing: -.028em; }
 .sec-head p { color: var(--text-dim); max-width: var(--measure); margin-top: var(--s2); }
 
 /* ---------- 9. about ----------------------------------- */
@@ -430,6 +426,9 @@ section[id] + section[id] { border-top: 1px solid var(--border); }
 .tick-list li > span { display: block; }
 
 /* ---------- 10. project cards -------------------------- */
+/* Asymmetric on purpose. Six identical boxes in a 2x3 grid is what makes
+   a hand-built page read as a template; promoting the lead project to a
+   full-width panel is the cheapest possible layout variation. */
 .cards { display: grid; gap: var(--s2); grid-template-columns: repeat(2, 1fr); }
 @media (max-width: 760px) { .cards { grid-template-columns: 1fr; } }
 
@@ -446,7 +445,6 @@ section[id] + section[id] { border-top: 1px solid var(--border); }
               color-mix(in srgb, var(--accent) 9%, transparent), transparent 65%);
   opacity: 0; transition: opacity .3s;
 }
-/* .card:hover { border-color: var(--border-strong); transform: translateY(-3px); box-shadow: var(--shadow); } */
 .card:hover::after { opacity: 1; }
 .card__idx {
   font-family: var(--font-mono); font-size: var(--step--1);
@@ -462,6 +460,21 @@ section[id] + section[id] { border-top: 1px solid var(--border); }
 .card__more { font-family: var(--font-mono); font-size: var(--step--1); color: var(--accent); margin-top: var(--s2); }
 .card:hover .card__more .arw { transform: translateX(4px); }
 .card__more .arw { display: inline-block; transition: transform .25s var(--ease); }
+
+/* Lead card spans the row. Targeted structurally rather than with a
+   modifier class so build.py stays untouched and the view-transition
+   slug regex keeps matching `class="card reveal"`. */
+@media (min-width: 761px) {
+  .cards .card:first-child {
+    grid-column: 1 / -1;
+    padding: var(--s4);
+    background: linear-gradient(140deg,
+                color-mix(in srgb, var(--accent) 5%, var(--surface)), var(--surface) 55%);
+  }
+  .cards .card:first-child h3 { font-size: var(--step-2); max-width: 22ch; }
+  .cards .card:first-child > p { font-size: var(--step-1); max-width: 56ch; line-height: 1.5; }
+  .cards .card:first-child .card__idx { margin-bottom: var(--s2); }
+}
 
 .tag {
   font-family: var(--font-mono); font-size: .72rem;
@@ -500,7 +513,7 @@ section[id] + section[id] { border-top: 1px solid var(--border); }
   padding-top: .25rem; flex: 0 0 2.6rem;
 }
 .pubs li > div { flex: 1 1 auto; min-width: 0; }
-.pubs h4 { font-size: var(--step-0); font-weight: 600; margin-bottom: .3rem; }
+.pubs h4 { font-size: var(--step-1); font-weight: 600; margin-bottom: .3rem; letter-spacing: -.015em; }
 .pubs .journal { font-family: var(--font-mono); font-size: var(--step--1); color: var(--accent); margin-bottom: .5rem; }
 .pubs .why { color: var(--text-dim); font-size: calc(var(--step-0) * .96); max-width: 64ch; }
 @media (max-width: 560px) { .pubs li::before { flex-basis: 2rem; } }
@@ -532,7 +545,7 @@ section[id] + section[id] { border-top: 1px solid var(--border); }
 /* ---------- 15. contact -------------------------------- */
 .contact-grid { display: grid; grid-template-columns: minmax(0,1fr) minmax(0, 340px); gap: var(--s5); align-items: start; }
 @media (max-width: 860px) { .contact-grid { grid-template-columns: 1fr; gap: var(--s4); } }
-.contact-lead { font-size: var(--step-2); font-weight: 600; letter-spacing: -.02em; line-height: 1.3; margin-bottom: var(--s3); max-width: 28ch; }
+.contact-lead { font-size: var(--step-2); font-weight: 600; letter-spacing: -.025em; line-height: 1.25; margin-bottom: var(--s3); max-width: 26ch; }
 .contact-grid p { color: var(--text-dim); max-width: var(--measure); }
 .contact-grid p + p { margin-top: var(--s2); }
 
@@ -558,7 +571,7 @@ section[id] + section[id] { border-top: 1px solid var(--border); }
 .proj-hero { padding-block: var(--s5) var(--s4); border-bottom: 1px solid var(--border); }
 .backlink { font-family: var(--font-mono); font-size: var(--step--1); color: var(--text-dim); display: inline-block; margin-bottom: var(--s3); }
 .backlink:hover { color: var(--accent); text-decoration: none; }
-.proj-hero h1 { font-size: var(--step-3); margin-bottom: var(--s2); max-width: 20ch; }
+.proj-hero h1 { font-size: var(--step-3); margin-bottom: var(--s2); max-width: 20ch; line-height: 1.05; }
 .proj-hero .meta { font-family: var(--font-mono); font-size: var(--step--1); color: var(--text-dim); margin-bottom: var(--s3); line-height: 1.8; }
 .proj-hero .meta b { color: var(--accent); font-weight: 500; }
 .proj-hero .lede { font-size: var(--step-1); color: var(--text-dim); max-width: 60ch; line-height: 1.6; }
@@ -583,6 +596,7 @@ section[id] + section[id] { border-top: 1px solid var(--border); }
 .proj-body > section { scroll-margin-top: 92px; padding-block: 0 var(--s5); border: 0; }
 .proj-body h2 { font-size: var(--step-2); margin-bottom: var(--s3); padding-bottom: .6rem; border-bottom: 1px solid var(--border); }
 .proj-body h3 { margin: var(--s3) 0 var(--s1); }
+
 .proj-body p, .proj-body ul, .proj-body ol { max-width: var(--measure); }
 .proj-body p, .proj-body li { text-wrap: pretty; hyphens: none; overflow-wrap: break-word; }
 .proj-body p + p, .proj-body p + ul, .proj-body ul + p,
@@ -606,6 +620,14 @@ figure:not(.hero__portrait) { margin: var(--s4) 0; }
 figure img, figure .svgbox { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); width: 100%; }
 figcaption { font-family: var(--font-mono); font-size: var(--step--1); color: var(--text-faint); margin-top: .7rem; line-height: 1.6; max-width: var(--measure); }
 figcaption b { color: var(--text-dim); font-weight: 500; }
+
+/* Figures break out past the text measure on wide screens. Data is the
+   point of these pages; keeping plots inside a 70ch column wastes the
+   half of the viewport that the sticky TOC does not use. Rightward only
+   — a leftward bleed would run under the TOC. */
+@media (min-width: 1180px) {
+  .proj-body figure { width: calc(100% + 7rem); }
+}
 
 .stack-grid { display: flex; flex-wrap: wrap; gap: .4rem; max-width: var(--measure); }
 
@@ -696,11 +718,11 @@ kbd { border: 1px solid var(--border-strong); border-bottom-width: 2px; border-r
   .nav, .nav__mobile, .progress, .hero__plot, .pal, .btn, .toc { display: none !important; }
   .hero__inner { grid-template-columns: 1fr; }
   .hero__portrait { width: 90px; }
-  .hero__portrait::before { display: none; }
   body { background: #fff; color: #000; }
   a { color: #000; text-decoration: underline; }
   section[id] { padding-block: 1rem; break-inside: avoid; }
   .proj-layout { grid-template-columns: 1fr; }
+  .proj-body figure { width: 100%; }
 }
 
 /* ============================================================
@@ -734,8 +756,8 @@ html[data-vt-arriving] { scroll-behavior: auto !important; }
    snapshot, or the nav and footer cross-fade into themselves. */
 .nav    { view-transition-name: site-nav; }
 .footer { view-transition-name: site-footer; }
-.progress { view-transition-name: site-progress; }
 
+.progress { view-transition-name: site-progress; }
 ::view-transition-group(site-progress) { animation: none; }
 ::view-transition-old(site-progress),
 ::view-transition-new(site-progress) { animation: none; opacity: 1; }
@@ -763,7 +785,6 @@ html[data-vt-arriving] { scroll-behavior: auto !important; }
 
 html[data-vt-dir="back"]::view-transition-old(root) { animation-name: vt-out-back; }
 html[data-vt-dir="back"]::view-transition-new(root) { animation-name: vt-in-back; }
-
 @keyframes vt-out-back { to   { opacity: 0; transform: translateY(8px); } }
 @keyframes vt-in-back  { from { opacity: 0; transform: translateY(-10px); } }
 

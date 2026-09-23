@@ -1,7 +1,6 @@
 /* abrian abir — site behavior. vanilla, no deps. */
 (() => {
   'use strict';
-
   const $  = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
   const root = document.documentElement;
@@ -47,6 +46,7 @@
 
   if (burger && mobile) {
     const isOpen = () => burger.getAttribute('aria-expanded') === 'true';
+
     const setMenu = open => {
       burger.setAttribute('aria-expanded', String(open));
       burger.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
@@ -65,12 +65,14 @@
 
     addEventListener('keydown', e => {
       if (!isOpen()) return;
+
       if (e.key === 'Escape') {
         setMenu(false);
         burger.focus();
         return;
       }
       if (e.key !== 'Tab') return;
+
       /* keep tabbing inside the panel while it's open */
       const f = [burger, ...$$('a', mobile)];
       const first = f[0], last = f[f.length - 1];
@@ -109,14 +111,12 @@
 
   /* ---- reveal on scroll ------------------------------------- */
   const revealables = $$('.reveal');
-
   /* Anything already in the viewport is revealed synchronously —
      otherwise a view-transition snapshot taken on arrival can
      freeze an empty page into the animation. */
   revealables.forEach(el => {
     if (el.getBoundingClientRect().top < innerHeight) el.classList.add('in');
   });
-
   if (reduced()) revealables.forEach(el => el.classList.add('in'));
   else {
     const ro = new IntersectionObserver((es, obs) => {
@@ -129,30 +129,29 @@
     revealables.forEach(el => ro.observe(el));
   }
 
-  /* ---- rotating headline (typewriter) ----------------------- */
+  /* ---- headline --------------------------------------------- */
   const hl = $('#headline');
   if (hl) {
     let lines = [];
-    try { lines = JSON.parse(hl.dataset.lines || '[]'); } catch {}
-    const out = $('#headline-text');
-    if (reduced() || lines.length < 2) {
-      out.textContent = lines[0] || '';
-      $('.cursor')?.remove();
-    } else {
-      let i = 0, j = 0, del = false;
-      const tick = () => {
-        const s = lines[i];
-        j += del ? -1 : 1;
-        out.textContent = s.slice(0, j);
-        let wait = del ? 18 : 34;
-        if (!del && j === s.length) { wait = 2600; del = true; }
-        else if (del && j === 0) { del = false; i = (i + 1) % lines.length; wait = 320; }
-        setTimeout(tick, wait);
-      };
-      setTimeout(tick, 550);
-    }
-  }
+    try { lines = JSON.parse(hl.dataset.lines || '[]'); } catch { }
 
+    const out = $('#headline-text', hl);
+    if (out && lines.length) {
+      const KEY = 'headline:i';
+      let i = 0;
+      try {
+        i = (parseInt(localStorage.getItem(KEY), 10) || 0) % lines.length;
+        localStorage.setItem(KEY, String((i + 1) % lines.length));
+      } catch {
+        i = Math.floor(Math.random() * lines.length);
+      }
+      out.textContent = lines[i];
+    } else if (out) {
+      out.textContent = '';
+    }
+
+    $('.cursor', hl)?.remove();
+  }
   /* ---- card pointer spotlight ------------------------------- */
   if (!reduced() && matchMedia('(hover: hover)').matches) {
     $$('.card').forEach(card => {
@@ -177,7 +176,6 @@
   /* ---- command palette (Ctrl/⌘ K, or /) --------------------- */
   const pal = $('#palette');
   let closePalette = () => {};
-
   if (pal) {
     const input = $('#palette-input');
     const list  = $('#palette-list');
@@ -261,7 +259,6 @@
         ($('a.is-active', list) || $('a', visible()[0] || document.createElement('li')))?.click();
       }
     });
-
     pal.addEventListener('close', () => { clearActive(); empty?.remove(); empty = null; });
   }
 
@@ -269,6 +266,7 @@
      CSS handles the root cross-fade. This does the one thing CSS
      cannot: decide WHICH card is the shared element, since a
      view-transition-name must be unique per document.
+
      Requires an http(s) origin. Inert on file:// and where
      cross-document transitions aren't supported. ---------------- */
 
@@ -362,7 +360,6 @@
 
     addEventListener('pageswap', e => {
       if (!e.viewTransition) { stash(null); return; }
-
       if (reduced()) { e.viewTransition.skipTransition(); untag(); stash(null); return; }
 
       shutOverlays();
@@ -385,7 +382,6 @@
 
     addEventListener('pagereveal', e => {
       if (!e.viewTransition) { root.removeAttribute('data-vt-arriving'); unstash(); return; }
-
       if (reduced()) {
         e.viewTransition.skipTransition();
         root.removeAttribute('data-vt-arriving');
