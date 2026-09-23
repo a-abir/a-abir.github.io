@@ -1,10 +1,20 @@
 /* abrian abir — site behavior. vanilla, no deps. */
 (() => {
   'use strict';
+
   const $  = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
-  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const root = document.documentElement;
+
+  /* Live query, not a one-shot boolean. iOS users toggle Reduce Motion
+     mid-session, and a cached `true` from load time silently disables
+     things forever. Read `.matches` at the moment of use. */
+  const rmq = matchMedia('(prefers-reduced-motion: reduce)');
+  const reduced = () => rmq.matches;
+
+  /* Safari <14 lacks addEventListener on MediaQueryList. */
+  const onMQ = (mq, fn) =>
+    mq.addEventListener ? mq.addEventListener('change', fn) : mq.addListener(fn);
 
   /* ---- theme ------------------------------------------------ */
   const setTheme = t => {
@@ -27,27 +37,22 @@
   addEventListener('scroll', onScroll, { passive: true });
   onScroll();
 
-  /* ---- mobile menu ------------------------------------------
-     Deliberately minimal. Earlier versions locked body scroll
-     (position:fixed + overflow:hidden) and hand-rolled the hash
-     jump with scrollIntoView + pushState. Both fight the browser:
-     changing overflow on a scrolled document makes mobile engines
-     recompute the viewport, and a manual scroll racing the native
-     hash jump is what produced the "scrolls to top" behaviour.
-
-     So: flip `hidden`, flip `aria-expanded`, and let the browser
-     own navigation. Nothing else. -------------------------------- */
+  /* ---- mobile menu ------------------------------------------*/
   const burger = $('#nav-toggle');
   const mobile = $('#nav-mobile');
 
+  /* Exposed so the view-transition code can force overlays shut
+     before the outgoing snapshot is taken. */
+  let closeMenu = () => {};
+
   if (burger && mobile) {
     const isOpen = () => burger.getAttribute('aria-expanded') === 'true';
-
     const setMenu = open => {
       burger.setAttribute('aria-expanded', String(open));
       burger.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
       mobile.hidden = !open;
     };
+    closeMenu = () => setMenu(false);
 
     burger.addEventListener('click', () => setMenu(!isOpen()));
 
@@ -60,14 +65,12 @@
 
     addEventListener('keydown', e => {
       if (!isOpen()) return;
-
       if (e.key === 'Escape') {
         setMenu(false);
         burger.focus();
         return;
       }
       if (e.key !== 'Tab') return;
-
       /* keep tabbing inside the panel while it's open */
       const f = [burger, ...$$('a', mobile)];
       const first = f[0], last = f[f.length - 1];
@@ -83,9 +86,7 @@
 
     /* never leave it open across a restore or past the breakpoint */
     addEventListener('pageshow', () => setMenu(false));
-    matchMedia('(min-width: 761px)').addEventListener('change', e => {
-      if (e.matches) setMenu(false);
-    });
+    onMQ(matchMedia('(min-width: 761px)'), e => { if (e.matches) setMenu(false); });
   }
 
   /* ---- scroll spy (main nav + mobile panel + project TOC) ---- */
@@ -108,13 +109,15 @@
 
   /* ---- reveal on scroll ------------------------------------- */
   const revealables = $$('.reveal');
+
   /* Anything already in the viewport is revealed synchronously —
      otherwise a view-transition snapshot taken on arrival can
      freeze an empty page into the animation. */
   revealables.forEach(el => {
     if (el.getBoundingClientRect().top < innerHeight) el.classList.add('in');
   });
-  if (reduced) revealables.forEach(el => el.classList.add('in'));
+
+  if (reduced()) revealables.forEach(el => el.classList.add('in'));
   else {
     const ro = new IntersectionObserver((es, obs) => {
       es.forEach(e => {
@@ -132,7 +135,7 @@
     let lines = [];
     try { lines = JSON.parse(hl.dataset.lines || '[]'); } catch {}
     const out = $('#headline-text');
-    if (reduced || lines.length < 2) {
+    if (reduced() || lines.length < 2) {
       out.textContent = lines[0] || '';
       $('.cursor')?.remove();
     } else {
@@ -151,18 +154,30 @@
   }
 
   /* ---- card pointer spotlight ------------------------------- */
-  if (!reduced && matchMedia('(hover: hover)').matches) {
+  if (!reduced() && matchMedia('(hover: hover)').matches) {
     $$('.card').forEach(card => {
       card.addEventListener('pointermove', e => {
         const r = card.getBoundingClientRect();
         card.style.setProperty('--mx', `${e.clientX - r.left}px`);
         card.style.setProperty('--my', `${e.clientY - r.top}px`);
       });
+      card.addEventListener('pointerenter', () => {
+        card.style.borderColor = 'var(--border-strong)';
+        card.style.transform = 'translateY(-3px)';
+        card.style.boxShadow = 'var(--shadow)';
+      });
+      card.addEventListener('pointerleave', () => {
+        card.style.borderColor = '';
+        card.style.transform = '';
+        card.style.boxShadow = '';
+      });
     });
   }
 
   /* ---- command palette (Ctrl/⌘ K, or /) --------------------- */
   const pal = $('#palette');
+  let closePalette = () => {};
+
   if (pal) {
     const input = $('#palette-input');
     const list  = $('#palette-list');
@@ -182,6 +197,7 @@
       input.focus();
     };
     const close = () => pal.open && pal.close();
+    closePalette = close;
 
     $$('[data-open-palette]').forEach(b => b.addEventListener('click', open));
 
@@ -245,6 +261,7 @@
         ($('a.is-active', list) || $('a', visible()[0] || document.createElement('li')))?.click();
       }
     });
+
     pal.addEventListener('close', () => { clearActive(); empty?.remove(); empty = null; });
   }
 
@@ -252,21 +269,36 @@
      CSS handles the root cross-fade. This does the one thing CSS
      cannot: decide WHICH card is the shared element, since a
      view-transition-name must be unique per document.
-
      Requires an http(s) origin. Inert on file:// and where
      cross-document transitions aren't supported. ---------------- */
+
+  /* Feature test, not a motion test. Reduce Motion is checked per
+     navigation instead — baking it into this constant is what made
+     the whole feature vanish on phones, where Reduce Motion is
+     commonly enabled. CSS already tones the animation down. */
   const supportsVT =
     'startViewTransition' in document &&
-    CSS.supports('view-transition-name: a') &&
-    !reduced;
+    typeof CSS !== 'undefined' &&
+    CSS.supports('view-transition-name: a');
 
   if (supportsVT) {
+    const KEY = 'vt:from-slug';
+
     const slugOf = url => {
       try {
         const m = new URL(url, location.href).pathname.match(/\/projects\/([^/]+)\.html?$/i);
         return m ? m[1] : null;
       } catch { return null; }
     };
+
+    /* The slug of THIS page, straight from the DOM. `.proj-hero`
+       already carries data-slug, so the return trip never has to ask
+       the Navigation API — which does not exist in Safari, and was
+       why the shared element only appeared in Chromium. */
+    const hereSlug = () => $('.proj-hero')?.dataset.slug || slugOf(location.href);
+
+    const stash = v => { try { v ? sessionStorage.setItem(KEY, v) : sessionStorage.removeItem(KEY); } catch {} };
+    const unstash = () => { try { const v = sessionStorage.getItem(KEY); sessionStorage.removeItem(KEY); return v; } catch { return null; } };
 
     const untag = () => {
       $$('.vt-card').forEach(el => {
@@ -276,24 +308,75 @@
       $$('.card .vt-title').forEach(el => el.classList.remove('vt-title'));
     };
 
+    /* A named element outside the viewport animates from nowhere
+       visible, which reads as "the transition didn't run". */
+    const inViewport = el => {
+      const r = el.getBoundingClientRect();
+      if (!r.width || !r.height) return false;
+      const vh = innerHeight || root.clientHeight;
+      const vw = innerWidth  || root.clientWidth;
+      const visY = Math.min(r.bottom, vh) - Math.max(r.top, 0);
+      const visX = Math.min(r.right, vw) - Math.max(r.left, 0);
+      return visY > Math.min(r.height * 0.35, 80) && visX > 0;
+    };
+
     const tagCard = slug => {
       untag();
       if (!slug) return false;
       const card = document.querySelector(`.card[data-slug="${CSS.escape(slug)}"]`);
-      if (!card) return false;
+      if (!card || !inViewport(card)) return false;
       card.classList.add('vt-card');
       card.querySelector('h3 a')?.classList.add('vt-title');
       return true;
     };
 
+    /* --- fragment arrivals ----------------------------------
+       "← all projects" points at index.html#projects. That is a
+       FORWARD navigation carrying a hash, and the browser applies
+       the fragment scroll only AFTER pagereveal. So at snapshot
+       time the document is still at scroll 0: the card grid is
+       thousands of pixels away, inViewport() rejects it, and the
+       fragment scroll then fires mid-animation against a root
+       snapshot pinned at the old offset — which is the jump.
+
+       Landing the scroll here, synchronously and without smooth
+       behaviour, puts the page in its final position before the
+       snapshot is taken. Browser Back is unaffected because scroll
+       restoration has already run by this point. */
+    const settleFragment = () => {
+      const id = location.hash;
+      if (!id || id === '#') return;
+      let target = null;
+      try { target = document.querySelector(id); } catch { return; }
+      if (!target) return;
+      const prev = root.style.scrollBehavior;
+      root.style.scrollBehavior = 'auto';
+      target.scrollIntoView({ block: 'start' });
+      root.style.scrollBehavior = prev;
+    };
+
+    /* Overlays must not be in the outgoing snapshot. Closing them in
+       the link's own click handler races the capture; doing it here
+       is synchronous and guaranteed to land first. */
+    const shutOverlays = () => { try { closeMenu(); closePalette(); } catch {} };
+
     addEventListener('pageswap', e => {
-      if (!e.viewTransition) return;
-      const to = e.activation?.entry?.url;
-      const from = e.activation?.from?.url;
-      if (!to) return;
+      if (!e.viewTransition) { stash(null); return; }
+
+      if (reduced()) { e.viewTransition.skipTransition(); untag(); stash(null); return; }
+
+      shutOverlays();
+
+      const to   = e.activation?.entry?.url || location.href;
+      const from = hereSlug();
+
+      /* Hand the origin slug to the next document. e.activation is
+         Chromium-only on the receiving side, and Safari has no
+         Navigation API at all, so this is the portable channel. */
+      stash(!slugOf(to) && from ? from : null);
 
       root.dataset.vtDir = slugOf(to) ? 'forward' : 'back';
-      if (slugOf(to) && !slugOf(from)) tagCard(slugOf(to));
+      if (slugOf(to) && !from) tagCard(slugOf(to));
 
       /* names must not survive into the bfcache snapshot, or a
          restored page holds a duplicate and kills the next one */
@@ -301,23 +384,43 @@
     });
 
     addEventListener('pagereveal', e => {
-      if (!e.viewTransition) { root.removeAttribute('data-vt-arriving'); return; }
-      const from = navigation?.activation?.from?.url;
-      const here = location.href;
+      if (!e.viewTransition) { root.removeAttribute('data-vt-arriving'); unstash(); return; }
+
+      if (reduced()) {
+        e.viewTransition.skipTransition();
+        root.removeAttribute('data-vt-arriving');
+        root.removeAttribute('data-vt-dir');
+        untag(); unstash();
+        return;
+      }
+
+      const here = hereSlug();
+      const from = unstash();
 
       root.dataset.vtArriving = '';
-      root.dataset.vtDir = slugOf(here) ? 'forward' : 'back';
+      root.dataset.vtDir = here ? 'forward' : 'back';
 
-      if (!slugOf(here) && slugOf(from)) tagCard(slugOf(from));
+      /* order matters: scroll first, then measure, then tag */
+      if (!here) {
+        settleFragment();
+        if (from) tagCard(from);
+      }
 
-      e.viewTransition.finished.then(() => {
+      const cleanup = () => {
         root.removeAttribute('data-vt-arriving');
         root.removeAttribute('data-vt-dir');
         untag();
-      }, () => root.removeAttribute('data-vt-arriving'));
+      };
+      e.viewTransition.finished.then(cleanup, () => root.removeAttribute('data-vt-arriving'));
+
+      /* Safety net: if `finished` never settles (a skipped or
+         interrupted transition on a backgrounded tab — common when
+         a phone locks mid-navigation) the page would stay stuck in
+         its arriving state with pointer-events or opacity pinned. */
+      setTimeout(cleanup, 1200);
     });
 
-    addEventListener('pagehide', untag);
+    addEventListener('pagehide', () => { untag(); shutOverlays(); });
   }
 
   /* ---- console note ----------------------------------------- */

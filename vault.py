@@ -4,6 +4,7 @@ vault.py — encrypt a directory into a single authenticated archive.
 
     python vault.py encrypt -s ./secrets -o secrets.vault
     python vault.py decrypt -s secrets.vault -o ./restored
+    python vault.py check   -s secrets.vault -d ./secrets
     python vault.py inspect -s secrets.vault
 
 Format (v2). Everything before the chunk stream is a fixed 50-byte header
@@ -38,13 +39,16 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import hashlib
 import io
 import os
 import secrets
+import shutil
 import stat
 import struct
 import sys
 import tarfile
+import tempfile
 from pathlib import Path
 from typing import BinaryIO
 
@@ -71,13 +75,14 @@ HEADER_SIZE = struct.calcsize(HEADER_FMT)   # 50
 
 CHUNK_SIZE = 4 * 1024 * 1024                # 4 MiB of plaintext per chunk
 MAX_CHUNK_SIZE = 256 * 1024 * 1024          # refuse absurd sizes from a header
+HASH_BLOCK = 1024 * 1024                    # read size when hashing for `check`
 
 # scrypt at n=2**16, r=8, p=1 costs ~64 MiB and is far harder to attack with
 # GPUs than PBKDF2. PBKDF2 stays available for environments that need it.
 SCRYPT_N, SCRYPT_R, SCRYPT_P = 1 << 16, 8, 1
 PBKDF2_ITERATIONS = 600_000
 
-EXIT_OK, EXIT_USAGE, EXIT_AUTH, EXIT_IO = 0, 2, 3, 4
+EXIT_OK, EXIT_DIFF, EXIT_USAGE, EXIT_AUTH, EXIT_IO = 0, 1, 2, 3, 4
 
 
 class VaultError(Exception):
@@ -105,14 +110,12 @@ def unpack_header(raw: bytes) -> dict:
     if len(raw) != HEADER_SIZE:
         raise VaultError("file is too short to be a vault")
     magic, version, kdf_id, p1, p2, p3, salt, prefix, chunk = struct.unpack(HEADER_FMT, raw)
-
     if magic != MAGIC:
         raise VaultError("not a vault file (bad magic)")
     if version != VERSION:
         raise VaultError(f"unsupported format version {version}; this build reads v{VERSION}")
     if not 0 < chunk <= MAX_CHUNK_SIZE:
         raise VaultError(f"implausible chunk size in header ({chunk})")
-
     return {"kdf_id": kdf_id, "p1": p1, "p2": p2, "p3": p3,
             "salt": salt, "nonce_prefix": prefix, "chunk_size": chunk}
 
@@ -215,20 +218,17 @@ class ChunkedDecryptReader(io.RawIOBase):
             raise VaultError("archive is truncated — final chunk missing")
         if len(head) < 5:
             raise VaultError("archive ends mid-frame (truncated or corrupt)")
-
         final_flag, length = struct.unpack(">BI", head)
         if final_flag not in (0, 1):
             raise VaultError("corrupt chunk frame")
         if length < TAG_SIZE or length > MAX_CHUNK_SIZE + TAG_SIZE:
             raise VaultError("corrupt chunk length")
-
         ct = self._read_exact(length)
         final = bool(final_flag)
         # Wrong password, tampered bytes, reordered chunks, and a spliced
         # header all surface here as InvalidTag.
         plain = self._aes.decrypt(_nonce(self._prefix, self._counter), ct,
                                   _aad(self._header, self._counter, final))
-
         self._buf += plain
         self._counter += 1
         self._plain_bytes += len(plain)
@@ -267,7 +267,6 @@ def make_progress(label: str, enabled: bool):
             return
         state["last"] = done
         print(f"\r  {label} {human(done)}…", end="", file=sys.stderr, flush=True)
-
     return report
 
 
@@ -281,22 +280,19 @@ def read_password(args, *, confirm: bool) -> str:
     Password sources, in order. Deliberately no --password flag: anything on
     argv is visible in `ps` output and lands in shell history.
     """
-    if args.password_file:
+    if getattr(args, "password_file", None):
         pw = Path(args.password_file).read_text(encoding="utf-8").splitlines()
         if not pw or not pw[0]:
             raise VaultError("password file is empty")
         return pw[0]
-
     env = os.environ.get("VAULT_PASSWORD")
     if env:
         return env
-
     if not sys.stdin.isatty():
         line = sys.stdin.readline().rstrip("\n")
         if not line:
             raise VaultError("no password on stdin")
         return line
-
     pw = getpass.getpass("Password: ")
     if not pw:
         raise VaultError("password cannot be empty")
@@ -332,6 +328,158 @@ def tar_filter(tarinfo: tarfile.TarInfo):
     tarinfo.uid = tarinfo.gid = 0
     tarinfo.uname = tarinfo.gname = ""
     return tarinfo
+
+
+def _safe_extract_legacy(tar: tarfile.TarFile, dest: Path) -> None:
+    """Fallback for Python < 3.12, which has no extraction filters."""
+    dest = dest.resolve()
+
+    def escapes(name: str) -> bool:
+        target = (dest / name).resolve()
+        return target != dest and dest not in target.parents
+
+    for member in tar:                       # streaming mode: iterate, don't getmembers()
+        if member.name.startswith("/") or escapes(member.name):
+            raise VaultError(f"blocked path traversal in archive: {member.name}")
+        if member.issym() or member.islnk():
+            if member.linkname.startswith("/") or escapes(member.linkname):
+                raise VaultError(f"blocked link escaping destination: {member.name}")
+        if member.ischr() or member.isblk() or member.isfifo():
+            raise VaultError(f"blocked device entry in archive: {member.name}")
+        member.mode &= ~(stat.S_ISUID | stat.S_ISGID)
+        tar.extract(member, path=dest, set_attrs=False)
+
+
+def extract_vault(vault: Path, dest: Path, args, label: str) -> None:
+    """
+    Decrypt `vault` into `dest`. Shared by `decrypt` and `check` so the two
+    can never drift apart on password handling or extraction hardening.
+    """
+    with vault.open("rb") as fh:
+        header_raw = fh.read(HEADER_SIZE)
+        meta = unpack_header(header_raw)
+
+        password = read_password(args, confirm=False)
+        print("  deriving key…", file=sys.stderr)
+        key = derive_key(password, meta["salt"], meta["kdf_id"],
+                         meta["p1"], meta["p2"], meta["p3"])
+        del password
+
+        aesgcm = AESGCM(key)
+        progress = make_progress(label, not args.quiet)
+        reader = ChunkedDecryptReader(fh, aesgcm, meta["nonce_prefix"],
+                                      header_raw, progress)
+
+        dest.mkdir(parents=True, exist_ok=True)
+        try:
+            with tarfile.open(fileobj=reader, mode="r|gz") as tar:
+                # The "data" filter is the supported way to block absolute
+                # paths, "..", links escaping the destination, device nodes,
+                # and setuid bits. The hand-rolled commonpath check it
+                # replaces missed link targets entirely.
+                if sys.version_info >= (3, 12):
+                    tar.extractall(path=dest, filter="data")
+                else:
+                    _safe_extract_legacy(tar, dest)
+        except InvalidTag:
+            raise
+        except tarfile.TarError as exc:
+            raise VaultError(f"archive decrypted but the tar stream is damaged: {exc}")
+
+
+# --------------------------------------------------------------------------- tree diff
+def _sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as fh:
+        for block in iter(lambda: fh.read(HASH_BLOCK), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
+def snapshot_tree(root: Path) -> dict[str, tuple]:
+    """
+    Map every entry under `root` to a comparable fingerprint.
+
+    Deliberately content-only: (kind, size, sha256) for files, the target
+    string for symlinks, and a bare marker for directories. Mode, mtime,
+    uid and gid are NOT compared, because `tar_filter` already strips uid,
+    gid and the setuid bits on the way in — including them would report a
+    permanent, unfixable difference on every run.
+
+    Symlinks are recorded, never followed: following them would hash the
+    same file twice and could walk straight out of the tree.
+    """
+    out: dict[str, tuple] = {}
+    root = root.resolve()
+
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+        here = Path(dirpath)
+        for name in sorted(dirnames + filenames):
+            full = here / name
+            rel = full.relative_to(root).as_posix()
+            try:
+                st = full.lstat()
+            except OSError as exc:
+                raise VaultError(f"cannot stat '{full}': {exc}")
+
+            if stat.S_ISLNK(st.st_mode):
+                out[rel] = ("link", os.readlink(full))
+            elif stat.S_ISDIR(st.st_mode):
+                out[rel] = ("dir",)
+            elif stat.S_ISREG(st.st_mode):
+                out[rel] = ("file", st.st_size, _sha256(full))
+            else:
+                # Devices and fifos are dropped by tar_filter at encrypt time,
+                # so counting them here would be a false positive forever.
+                continue
+    return out
+
+
+def diff_trees(vault_tree: dict, live_tree: dict) -> dict:
+    v, l = set(vault_tree), set(live_tree)
+    added = sorted(l - v)          # present live, absent from the vault
+    removed = sorted(v - l)        # in the vault, gone from the live folder
+    changed, retyped = [], []
+
+    for rel in sorted(v & l):
+        a, b = vault_tree[rel], live_tree[rel]
+        if a == b:
+            continue
+        if a[0] != b[0]:
+            retyped.append((rel, a[0], b[0]))
+        else:
+            changed.append(rel)
+
+    return {"added": added, "removed": removed,
+            "changed": changed, "retyped": retyped,
+            "in_sync": not (added or removed or changed or retyped)}
+
+
+def _print_diff(report: dict, limit: int) -> None:
+    def show(rows, mark, note):
+        if not rows:
+            return
+        print(f"\n  {note} ({len(rows)})")
+        for row in rows[:limit]:
+            print(f"    {mark} {row}")
+        if len(rows) > limit:
+            print(f"    … {len(rows) - limit} more (raise --limit to see all)")
+
+    show(report["added"], "+", "only in the folder — not yet encrypted")
+    show(report["removed"], "-", "only in the vault — deleted since encrypting")
+    show(report["changed"], "M", "contents differ")
+    show([f"{r} ({a} -> {b})" for r, a, b in report["retyped"]], "T", "type changed")
+
+
+def _rmtree_secure(path: Path) -> None:
+    """Best-effort cleanup. Chmod through read-only dirs rather than giving up."""
+    def on_error(func, target, _exc):
+        try:
+            os.chmod(target, stat.S_IRWXU)
+            func(target)
+        except OSError:
+            pass
+    shutil.rmtree(path, onerror=on_error)
 
 
 # --------------------------------------------------------------------------- commands
@@ -374,15 +522,13 @@ def cmd_encrypt(args) -> int:
             writer.finish()
             fh.flush()
             os.fsync(fh.fileno())
-
         tmp.replace(out_path)
-        clear_progress(not args.quiet)
 
+        clear_progress(not args.quiet)
         size = out_path.stat().st_size
         print(f"Encrypted '{source}' -> '{out_path}' ({human(size)}, "
               f"{'scrypt' if kdf_id == KDF_SCRYPT else 'pbkdf2'}).")
         return EXIT_OK
-
     except BaseException:
         clear_progress(not args.quiet)
         tmp.unlink(missing_ok=True)
@@ -398,60 +544,80 @@ def cmd_decrypt(args) -> int:
     if dest.exists() and any(dest.iterdir()) and not args.force:
         raise VaultError(f"'{dest}' is not empty (pass --force to extract into it)")
 
-    with vault.open("rb") as fh:
-        header_raw = fh.read(HEADER_SIZE)
-        meta = unpack_header(header_raw)
-
-        password = read_password(args, confirm=False)
-        print("  deriving key…", file=sys.stderr)
-        key = derive_key(password, meta["salt"], meta["kdf_id"],
-                         meta["p1"], meta["p2"], meta["p3"])
-        del password
-
-        aesgcm = AESGCM(key)
-        progress = make_progress("extracting", not args.quiet)
-        reader = ChunkedDecryptReader(fh, aesgcm, meta["nonce_prefix"],
-                                      header_raw, progress)
-
-        dest.mkdir(parents=True, exist_ok=True)
-        try:
-            with tarfile.open(fileobj=reader, mode="r|gz") as tar:
-                # The "data" filter is the supported way to block absolute
-                # paths, "..", links escaping the destination, device nodes,
-                # and setuid bits. The hand-rolled commonpath check it
-                # replaces missed link targets entirely.
-                if sys.version_info >= (3, 12):
-                    tar.extractall(path=dest, filter="data")
-                else:
-                    _safe_extract_legacy(tar, dest)
-        except InvalidTag:
-            raise
-        except tarfile.TarError as exc:
-            raise VaultError(f"archive decrypted but the tar stream is damaged: {exc}")
+    extract_vault(vault, dest, args, "extracting")
 
     clear_progress(not args.quiet)
     print(f"Decrypted '{vault}' -> '{dest}'.")
     return EXIT_OK
 
 
-def _safe_extract_legacy(tar: tarfile.TarFile, dest: Path) -> None:
-    """Fallback for Python < 3.12, which has no extraction filters."""
-    dest = dest.resolve()
+def cmd_check(args) -> int:
+    """
+    Decrypt into a scratch directory and diff it against the live folder, to
+    answer one question: is the .vault stale?
 
-    def escapes(name: str) -> bool:
-        target = (dest / name).resolve()
-        return target != dest and dest not in target.parents
+    The scratch copy is plaintext on disk for the duration of the run. It is
+    created with mode 0700 inside a private mkdtemp, and removed in a finally
+    block — but if the folder holds anything serious, point --temp-dir at a
+    tmpfs (/dev/shm on Linux) so the plaintext never reaches persistent
+    storage at all.
 
-    for member in tar:                       # streaming mode: iterate, don't getmembers()
-        if member.name.startswith("/") or escapes(member.name):
-            raise VaultError(f"blocked path traversal in archive: {member.name}")
-        if member.issym() or member.islnk():
-            if member.linkname.startswith("/") or escapes(member.linkname):
-                raise VaultError(f"blocked link escaping destination: {member.name}")
-        if member.ischr() or member.isblk() or member.isfifo():
-            raise VaultError(f"blocked device entry in archive: {member.name}")
-        member.mode &= ~(stat.S_ISUID | stat.S_ISGID)
-        tar.extract(member, path=dest, set_attrs=False)
+    Exit codes are the useful part: 0 means the vault matches, 1 means it is
+    out of date, so this drops straight into a shell conditional:
+
+        python vault.py check -s secrets.vault -d ./secrets || \\
+            python vault.py encrypt -s ./secrets -o secrets.vault --force
+    """
+    vault = Path(args.source)
+    if not vault.is_file():
+        raise VaultError(f"vault file '{args.source}' does not exist")
+
+    live = Path(args.dir).resolve()
+    if not live.is_dir():
+        raise VaultError(f"folder '{args.dir}' does not exist")
+
+    if args.temp_dir:
+        parent = Path(args.temp_dir).resolve()
+        if not parent.is_dir():
+            raise VaultError(f"temp directory '{args.temp_dir}' does not exist")
+    else:
+        parent = None
+
+    tmp_root = Path(tempfile.mkdtemp(prefix="vault-check-", dir=parent))
+    try:
+        os.chmod(tmp_root, 0o700)
+        dest = tmp_root / "tree"
+
+        extract_vault(vault, dest, args, "verifying")
+        clear_progress(not args.quiet)
+
+        # encrypt() packs with arcname=".", so everything lands under ./ —
+        # unwrap that so relative paths line up with the live folder.
+        inner = dest / "."
+        root = inner.resolve() if inner.is_dir() else dest
+
+        if not args.quiet:
+            print("  hashing…", file=sys.stderr)
+        vault_tree = snapshot_tree(root)
+        live_tree = snapshot_tree(live)
+    finally:
+        _rmtree_secure(tmp_root)
+
+    report = diff_trees(vault_tree, live_tree)
+
+    if report["in_sync"]:
+        print(f"In sync — '{vault}' matches '{live}' "
+              f"({len(live_tree)} entries). Nothing to re-encrypt.")
+        return EXIT_OK
+
+    n = (len(report["added"]) + len(report["removed"])
+         + len(report["changed"]) + len(report["retyped"]))
+    print(f"Out of date — '{vault}' differs from '{live}' ({n} difference"
+          f"{'' if n == 1 else 's'}).")
+    _print_diff(report, args.limit)
+    print(f"\n  re-encrypt with:\n"
+          f"    python {Path(sys.argv[0]).name} encrypt -s {live} -o {vault} --force")
+    return EXIT_DIFF
 
 
 def cmd_inspect(args) -> int:
@@ -459,12 +625,10 @@ def cmd_inspect(args) -> int:
     vault = Path(args.source)
     if not vault.is_file():
         raise VaultError(f"vault file '{args.source}' does not exist")
-
     meta = unpack_header(vault.open("rb").read(HEADER_SIZE))
     kdf = "scrypt" if meta["kdf_id"] == KDF_SCRYPT else "pbkdf2-hmac-sha256"
     params = (f"n={meta['p1']}, r={meta['p2']}, p={meta['p3']}"
               if meta["kdf_id"] == KDF_SCRYPT else f"iterations={meta['p1']}")
-
     print(f"  file         {vault}")
     print(f"  size         {human(vault.stat().st_size)}")
     print(f"  format       PYVAULT v{VERSION}")
@@ -503,6 +667,21 @@ def build_parser() -> argparse.ArgumentParser:
     dec = sub.add_parser("decrypt", help="decrypt an archive")
     common(dec)
     dec.set_defaults(func=cmd_decrypt)
+
+    chk = sub.add_parser(
+        "check", help="diff an archive against a folder; exit 1 if it is stale")
+    chk.add_argument("-s", "--source", required=True, metavar="VAULT")
+    chk.add_argument("-d", "--dir", required=True, metavar="FOLDER",
+                     help="the live folder to compare against")
+    chk.add_argument("-q", "--quiet", action="store_true")
+    chk.add_argument("--password-file", metavar="PATH",
+                     help="read the password from the first line of a file")
+    chk.add_argument("--temp-dir", metavar="PATH",
+                     help="where to extract the scratch copy; use a tmpfs "
+                          "such as /dev/shm to keep plaintext off disk")
+    chk.add_argument("--limit", type=int, default=20, metavar="N",
+                     help="max paths to list per category (default 20)")
+    chk.set_defaults(func=cmd_check)
 
     ins = sub.add_parser("inspect", help="show header details, no password needed")
     ins.add_argument("-s", "--source", required=True)

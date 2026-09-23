@@ -1,11 +1,11 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="light">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Fusion Tokamak Probe Optimization — Abrian Abir</title>
 <meta name="description" content="Automated HEAT → ANSYS Fluent → ANSYS Mechanical loop driven by a genetic algorithm to optimize cooling channel geometry for a WEST tokamak reciprocating probe.">
-<meta name="theme-color" content="#0D1117">
+<meta name="theme-color" content="#FDFDFC">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://a-abir.github.io/projects/tokamak-probe.html">
 <meta property="og:title" content="Fusion Tokamak Probe Optimization — Abrian Abir">
@@ -27,7 +27,7 @@
     const s = localStorage.getItem('theme');
     document.documentElement.dataset.theme =
       s || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
-  } catch { document.documentElement.dataset.theme = 'dark'; } })();
+  } catch { document.documentElement.dataset.theme = 'light'; } })();
 </script>
 <script type="speculationrules">
 {"prefetch":[{"where":{"selector_matches":".card a, .proj-nav a, .backlink, .pal a"},"eagerness":"moderate"}]}
@@ -178,7 +178,6 @@
   <span><a href="../index.html#contact">Get in touch →</a></span>
   <span>© <span id="yr">2026</span> Abrian Abir — Knoxville, TN</span>
 </footer>
-
 <dialog class="pal" id="palette" aria-label="Site search">
   <div class="pal__box">
     <input id="palette-input" type="text" placeholder="jump to…" autocomplete="off" spellcheck="false" aria-label="Search the site">
@@ -203,7 +202,6 @@
     <p class="pal__foot"><kbd>↑</kbd><kbd>↓</kbd> navigate · <kbd>↵</kbd> open · <kbd>esc</kbd> or click outside to close</p>
   </div>
 </dialog>
-
 <script src="../assets/js/main.js"></script>
 </body>
 </html>

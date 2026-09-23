@@ -1,12 +1,12 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="light">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Abrian Abir — Mechanical Engineer, Instrumentation & Automation</title>
 <meta name="description" content="Abrian Abir — mechanical engineer working on process monitoring, simulation automation, controls, and machine vision. Oak Ridge National Laboratory, Knoxville TN.">
 <meta name="author" content="Abrian Abir">
-<meta name="theme-color" content="#0D1117">
+<meta name="theme-color" content="#FDFDFC">
 <link rel="canonical" href="https://a-abir.github.io/">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://a-abir.github.io/">
@@ -28,7 +28,7 @@
     const s = localStorage.getItem('theme');
     document.documentElement.dataset.theme =
       s || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
-  } catch { document.documentElement.dataset.theme = 'dark'; } })();
+  } catch { document.documentElement.dataset.theme = 'light'; } })();
 </script>
 <script type="speculationrules">
 {"prefetch":[{"where":{"selector_matches":".card a, .proj-nav a, .backlink, .pal a"},"eagerness":"moderate"}]}
@@ -70,7 +70,6 @@
 }
 </script>
 </head>
-
 <body>
 <div class="progress" aria-hidden="true"></div>
 <a class="skip" href="#main">Skip to content</a>
@@ -113,30 +112,24 @@
     </g>
     <path class="trace" d="M0 360 C 60 352, 120 348, 180 330 S 230 300, 260 318 L 262 120 L 266 316 C 320 300, 380 292, 440 268 S 500 240, 530 258 L 533 96 L 537 254 C 600 236, 660 224, 720 196 S 780 166, 812 184 L 815 74 L 819 180 C 880 160, 940 148, 1000 124 S 1120 92, 1200 78"/>
   </svg>
-
   <div class="wrap hero__inner">
     <div class="hero__copy">
     <p class="eyebrow">mechanical engineering · instrumentation · automation</p>
     <h1>Abrian Abir</h1>
     <p class="hero__creds">M.S. Mechanical Engineering · E.I.T. · CSWA</p>
-
     <p class="hero__headline" id="headline" data-lines='["Process Monitoring. Simulation. Automation.", "Instrumentation and Data-Driven Manufacturing.", "Building the Measurement Systems That Close the Loop.", "From Sensor Data to Engineering Decisions.", "Bridging Simulation, Controls, and the Production Floor."]'><span id="headline-text"></span><span class="cursor" aria-hidden="true">|</span></p>
-
     <p class="hero__pitch">I develop instrumentation systems, automated simulation workflows, and data analysis pipelines for advanced manufacturing — currently at Oak Ridge National Laboratory's Manufacturing Demonstration Facility.</p>
-
     <p class="hero__meta">
       <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg> Knoxville, TN</span>
       <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V8l7-5 7 5v13M10 21v-6h4v6"/></svg> Oak Ridge National Laboratory</span>
       <span><i class="dot" aria-hidden="true"></i> Open to opportunities</span>
     </p>
-
     <div class="hero__cta">
       <a class="btn btn--primary" href="resume.pdf" download>Download resume (PDF)</a>
       <a class="btn" href="#projects">Read the projects →</a>
       <a class="btn btn--ghost" href="mailto:abrian.inbox@gmail.com">Email me</a>
     </div>
     </div>
-
     <figure class="hero__portrait">
       <picture>
         <source srcset="assets/img/portrait.webp 2x, assets/img/portrait@1x.webp 1x" type="image/webp">
@@ -455,6 +448,7 @@
     </div>
   </div>
 </section>
+
 </main>
 
 <footer class="footer wrap">
@@ -462,7 +456,6 @@
   <span>Press <kbd>Ctrl</kbd>&nbsp;<kbd>K</kbd> to search.</span>
   <span>© <span id="yr">2026</span> Abrian Abir — Knoxville, TN</span>
 </footer>
-
 <dialog class="pal" id="palette" aria-label="Site search">
   <div class="pal__box">
     <input id="palette-input" type="text" placeholder="jump to…" autocomplete="off" spellcheck="false" aria-label="Search the site">
@@ -487,7 +480,6 @@
     <p class="pal__foot"><kbd>↑</kbd><kbd>↓</kbd> navigate · <kbd>↵</kbd> open · <kbd>esc</kbd> or click outside to close</p>
   </div>
 </dialog>
-
 <script src="assets/js/main.js"></script>
 </body>
 </html>
