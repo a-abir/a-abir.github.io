@@ -295,8 +295,21 @@ section[id] + section[id] { border-top: 1px solid var(--border); }
 }
 .hero__plot path { fill: none; stroke: var(--accent); stroke-width: 1.2; vector-effect: non-scaling-stroke; }
 .hero__plot .grid { stroke: var(--text-faint); stroke-width: .5; opacity: .5; }
-.hero__plot .trace { stroke-dasharray: 2600; stroke-dashoffset: 2600; animation: draw 6s var(--ease) forwards; }
-@keyframes draw { to { stroke-dashoffset: 0; } }
+/* `stroke-dashoffset` is not a compositable property, so the draw effect
+   repaints the whole path on the main thread every frame. On a mid-range
+   phone that competes with first paint, so mobile gets a composited
+   opacity fade instead and only desktop runs the draw. */
+.hero__plot .trace { opacity: 0; animation: trace-in 1s var(--ease) .15s forwards; }
+@keyframes trace-in { to { opacity: 1; } }
+
+@media (min-width: 821px) and (pointer: fine) {
+  .hero__plot .trace {
+    opacity: 1;
+    stroke-dasharray: 2600; stroke-dashoffset: 2600;
+    animation: draw 6s var(--ease) forwards;
+  }
+  @keyframes draw { to { stroke-dashoffset: 0; } }
+}
 
 .hero__copy { min-width: 0; }
 .hero__inner {
@@ -347,7 +360,7 @@ section[id] + section[id] { border-top: 1px solid var(--border); }
    stated once, at display weight. */
 .hero__headline {
   font-size: var(--step-2); font-weight: 600; letter-spacing: -.025em;
-  line-height: 1.15; max-width: 20ch; margin-bottom: var(--s3);
+  line-height: 1.15; max-width: 28ch; margin-bottom: var(--s3);
   color: var(--text);
   text-wrap: balance;
 }
@@ -362,12 +375,25 @@ section[id] + section[id] { border-top: 1px solid var(--border); }
 }
 .hero__meta span { display: inline-flex; align-items: center; gap: .45rem; }
 .hero__meta svg { width: 14px; height: 14px; color: var(--text-faint); }
+/* The halo used to be an animated `box-shadow`, which repaints on the
+   main thread. A pseudo-element scaling and fading uses only `transform`
+   and `opacity`, both of which the compositor can run by itself. */
 .dot {
+  position: relative;
   width: 7px; height: 7px; border-radius: 50%; background: var(--data-green);
-  box-shadow: 0 0 0 0 color-mix(in srgb, var(--data-green) 70%, transparent);
-  animation: pulse 2.4s infinite;
 }
-@keyframes pulse { 70% { box-shadow: 0 0 0 7px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+.dot::after {
+  content: ""; position: absolute; inset: 0;
+  border-radius: 50%; background: var(--data-green);
+  animation: pulse 2.4s ease-out infinite;
+  will-change: transform, opacity;
+}
+@keyframes pulse {
+  0%   { transform: scale(1);   opacity: .7; }
+  70%  { transform: scale(3);   opacity: 0; }
+  100% { transform: scale(3);   opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .dot::after { animation: none; } }
 .hero__cta { display: flex; flex-wrap: wrap; gap: .75rem; }
 
 @media (max-width: 820px) {
@@ -708,10 +734,29 @@ figcaption b { color: var(--text-dim); font-weight: 500; }
 .pal li a span { font-family: var(--font-mono); color: var(--text-faint); font-size: .72rem; flex: 0 0 auto; }
 .pal__empty { padding: 1.1rem; color: var(--text-faint); font-family: var(--font-mono); font-size: var(--step--1); }
 .pal__foot { border-top: 1px solid var(--border); padding: .5rem .8rem; font-family: var(--font-mono); font-size: .7rem; color: var(--text-faint); }
-kbd { border: 1px solid var(--border-strong); border-bottom-width: 2px; border-radius: 4px; padding: 0 .3em; background: var(--surface-2); font-size: .9em; }
+/* `color` is explicit because <kbd> sits inside .footer and .pal__foot,
+   both of which set --text-faint. That inherited pair measures 3.4:1 on
+   --surface-2 and fails WCAG AA; --text-dim measures 5.3:1 or better in
+   both themes. */
+kbd {
+  border: 1px solid var(--border-strong); border-bottom-width: 2px;
+  border-radius: 4px; padding: 0 .3em;
+  background: var(--surface-2); color: var(--text-dim);
+  font-size: .9em;
+}
 
 /* ---------- 20. progress bar --------------------------- */
-.progress { position: fixed; top: 0; left: 0; height: 2px; z-index: 200; background: var(--accent); width: 0; }
+/* Driven by `transform: scaleX()` from JS rather than `width`, so the
+   reading indicator updates on the compositor instead of forcing a
+   layout pass on every scroll frame. */
+.progress {
+  position: fixed; top: 0; left: 0; height: 2px; z-index: 200;
+  background: var(--accent);
+  width: 100%;
+  transform: scaleX(0);
+  transform-origin: 0 50%;
+  will-change: transform;
+}
 
 /* ---------- 21. print ---------------------------------- */
 @media print {
@@ -823,7 +868,7 @@ html[data-vt-dir="back"]::view-transition-new(root) { animation-name: vt-in-back
 
 /* ---- 22.4 suppressing conflicts -------------------------------- */
 html[data-vt-arriving] .reveal { opacity: 1; transform: none; transition: none; }
-html[data-vt-arriving] .hero__plot .trace { animation: none; stroke-dashoffset: 0; }
+html[data-vt-arriving] .hero__plot .trace { animation: none; stroke-dashoffset: 0; opacity: 1; }
 
 /* a card mid-hover keeps its lift transform, which the snapshot would
    bake in and then have to undo. neutralise before capture. */

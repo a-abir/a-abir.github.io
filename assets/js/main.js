@@ -24,17 +24,44 @@
   $('#theme-toggle')?.addEventListener('click', () =>
     setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark'));
 
-  /* ---- sticky nav + reading progress ------------------------ */
+  /* ---- sticky nav + reading progress ------------------------
+     Layout thrash was the single most expensive thing on the page:
+     451 ms of forced reflow on a mid-range phone. The old version
+     wrote `nav.dataset.scrolled` (invalidates style) and then read
+     `document.body.scrollHeight` (forces a synchronous layout) on
+     every scroll event, and again synchronously during parse.
+
+     Three fixes: cache the document height and re-measure only on
+     resize, batch the writes into one rAF, and drive the bar with
+     `transform` instead of `width` so it composites instead of
+     triggering layout. ------------------------------------------ */
   const nav = $('.nav'), bar = $('.progress');
-  const onScroll = () => {
-    if (nav) nav.dataset.scrolled = window.scrollY > 8;
-    if (bar) {
-      const h = document.body.scrollHeight - innerHeight;
-      bar.style.width = (h > 0 ? (scrollY / h) * 100 : 0) + '%';
-    }
+  let scrollRange = 0;
+  let queued = false;
+
+  const measure = () => {
+    scrollRange = Math.max(0, document.documentElement.scrollHeight - innerHeight);
   };
+
+  const paint = () => {
+    queued = false;
+    const y = window.scrollY;
+    if (nav) nav.dataset.scrolled = y > 8;
+    if (bar) bar.style.transform = `scaleX(${scrollRange ? y / scrollRange : 0})`;
+  };
+
+  const onScroll = () => {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(paint);
+  };
+
   addEventListener('scroll', onScroll, { passive: true });
-  onScroll();
+  addEventListener('resize', () => { measure(); onScroll(); }, { passive: true });
+
+  /* Measure after first paint, never during parse — reading layout
+     before the page has rendered stalls the critical path. */
+  requestAnimationFrame(() => { measure(); paint(); });
 
   /* ---- mobile menu ------------------------------------------*/
   const burger = $('#nav-toggle');
@@ -111,12 +138,16 @@
 
   /* ---- reveal on scroll ------------------------------------- */
   const revealables = $$('.reveal');
-  /* Anything already in the viewport is revealed synchronously —
-     otherwise a view-transition snapshot taken on arrival can
-     freeze an empty page into the animation. */
-  revealables.forEach(el => {
-    if (el.getBoundingClientRect().top < innerHeight) el.classList.add('in');
-  });
+  /* Anything already in the viewport is revealed immediately — otherwise
+     a view-transition snapshot taken on arrival can freeze an empty page
+     into the animation.
+
+     Read every rect first, then write every class. Interleaving them
+     (rect, add, rect, add…) forces a synchronous layout per element,
+     which is what PageSpeed flagged at main.min.js:80. */
+  const onscreen = revealables.filter(
+    el => el.getBoundingClientRect().top < innerHeight);
+  onscreen.forEach(el => el.classList.add('in'));
   if (reduced()) revealables.forEach(el => el.classList.add('in'));
   else {
     const ro = new IntersectionObserver((es, obs) => {
