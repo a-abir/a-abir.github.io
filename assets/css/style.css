@@ -497,8 +497,8 @@ section[id] + section[id] { border-top: 1px solid var(--border); }
     background: linear-gradient(140deg,
                 color-mix(in srgb, var(--accent) 5%, var(--surface)), var(--surface) 55%);
   }
-  .cards .card:first-child h3 { font-size: var(--step-2); max-width: 22ch; }
-  .cards .card:first-child > p { font-size: var(--step-1); max-width: 56ch; line-height: 1.5; }
+  .cards .card:first-child h3 { font-size: var(--step-2)}
+  .cards .card:first-child > p { font-size: var(--step-1); line-height: 1.4; }
   .cards .card:first-child .card__idx { margin-bottom: var(--s2); }
 }
 
@@ -597,7 +597,7 @@ section[id] + section[id] { border-top: 1px solid var(--border); }
 .proj-hero { padding-block: var(--s5) var(--s4); border-bottom: 1px solid var(--border); }
 .backlink { font-family: var(--font-mono); font-size: var(--step--1); color: var(--text-dim); display: inline-block; margin-bottom: var(--s3); }
 .backlink:hover { color: var(--accent); text-decoration: none; }
-.proj-hero h1 { font-size: var(--step-3); margin-bottom: var(--s2); max-width: 20ch; line-height: 1.05; }
+.proj-hero h1 { font-size: var(--step-3); margin-bottom: var(--s2); line-height: 1.05; }
 .proj-hero .meta { font-family: var(--font-mono); font-size: var(--step--1); color: var(--text-dim); margin-bottom: var(--s3); line-height: 1.8; }
 .proj-hero .meta b { color: var(--accent); font-weight: 500; }
 .proj-hero .lede { font-size: var(--step-1); color: var(--text-dim); max-width: 60ch; line-height: 1.6; }
